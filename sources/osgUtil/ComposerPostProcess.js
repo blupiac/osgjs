@@ -400,66 +400,80 @@ utils.createPrototypeObject(
         // each time a texture is sampled, the usage is decremented
         // when is reaches 0 it means that the texture won't be used anymore so it can be reused
         // besides the usage number, the divisor, internal type and the filtering of the texture are used to make sure it can safely be reused
-        _hasFreeTexture: function(name, filter, out) {
+        _hasFreeTexture: function(passName, filter, out) {
+            // passName that directly matches a texture name
+            if (passName === out.name && this._texturePool[passName]) {
+                return passName;
+            }
+
             if (out.immuable) {
-                return this._texturePool[name] !== undefined ? name : '';
+                return;
             }
 
             for (var key in this._texturePool) {
                 var poolTexture = this._texturePool[key];
 
-                if (
-                    poolTexture.reusable &&
-                    poolTexture.usage <= 0 &&
-                    poolTexture.texture.divisor === out.divisor &&
-                    poolTexture.texture.getInternalFormatType() === out.type
-                ) {
-                    if (poolTexture.usage === -1) {
-                        if (poolTexture.texture.getMinFilter() !== filter) {
-                            poolTexture.texture.setMinFilter(filter);
-                            poolTexture.texture.setMagFilter(filter);
-                        }
+                // not reusable (could be used after postprocess)
+                if (!poolTexture.reusable) continue;
 
-                        return key;
-                    } else {
-                        if (poolTexture.texture.getMinFilter() === filter) {
-                            return key;
-                        }
+                // still required for a future postprocess pass
+                if (poolTexture.usage > 0) continue;
+
+                // different resolution
+                if (poolTexture.texture.divisor !== out.divisor) continue;
+
+                // different type (/!\ important, we could change type runtime, that way we cause lot of memory)
+                if (poolTexture.texture.getInternalFormatType() !== out.type) continue;
+
+                // first usage
+                if (poolTexture.usage === -1) {
+                    if (poolTexture.texture.getMinFilter() !== filter) {
+                        poolTexture.texture.setMinFilter(filter);
+                        poolTexture.texture.setMagFilter(filter);
                     }
+
+                    return key;
+                }
+
+                // reuse
+                if (poolTexture.texture.getMinFilter() === filter) {
+                    return key;
                 }
             }
 
-            return '';
+            return;
         },
 
-        _setOrCreateTextureKey: function(usage, name, out) {
-            var isLinear = this._textures[name].filter === 'linear';
+        _setOrCreateTextureKey: function(usage, passName, out) {
+            var isLinear = this._textures[passName].filter === 'linear';
             var filterEnum = isLinear ? Texture.LINEAR : Texture.NEAREST;
 
-            var poolKey = this._hasFreeTexture(name, filterEnum, out);
-            if (poolKey === '') {
-                if (out.immuable) {
-                    poolKey = name;
-                } else {
-                    poolKey = 'key' + this._currentPoolIndex++;
-                }
-
-                this._texturePool[poolKey] = {
-                    usage: usage,
-                    texture: this._createTexture(name, out.divisor, out.type, filterEnum),
-                    immuable: out.immuable,
-                    reusable: out.reusable
-                };
-
-                if (out.divisor === -1) {
-                    this._texturePool[poolKey].width = out.width;
-                    this._texturePool[poolKey].height = out.height;
-                }
-            } else {
+            var poolKey = this._hasFreeTexture(passName, filterEnum, out);
+            if (poolKey) {
                 this._texturePool[poolKey].usage = usage;
+                this._textures[passName].key = poolKey;
+                return;
             }
 
-            this._textures[name].key = poolKey;
+            if (out.immuable) {
+                poolKey = passName;
+            } else {
+                poolKey = 'key' + this._currentPoolIndex++;
+            }
+
+            this._texturePool[poolKey] = {
+                usage: usage,
+                texture: this._createTexture(passName, out.divisor, out.type, filterEnum),
+                immuable: out.immuable,
+                reusable: out.reusable
+            };
+
+            if (out.divisor === -1) {
+                this._texturePool[poolKey].width = out.width;
+                this._texturePool[poolKey].height = out.height;
+            }
+
+            this._textures[passName].key = poolKey;
         },
 
         _addStateSet: function(pass, stateSet) {
@@ -805,8 +819,8 @@ utils.createPrototypeObject(
                 pass.out.divisor = pass.out.divisor || 1.0;
 
                 pass.out.type = pass.out.type || Texture.UNSIGNED_BYTE;
-                pass.out.immuable = pass.out.immuable || false;
-                pass.out.reusable = pass.out.reusable || true;
+                if (pass.out.immuable === undefined) pass.out.immuable = false;
+                if (pass.out.reusable === undefined) pass.out.reusable = true;
 
                 if (pass.feedbackLoop || pass.out.divisor === -1) {
                     pass.out.immuable = true;
