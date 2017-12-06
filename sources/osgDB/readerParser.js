@@ -47,8 +47,6 @@ ReaderParser.registry = function() {
 
 ReaderParser.parseSceneGraph = function(node, options) {
     if (node.Version !== undefined && node.Version > 0) {
-        utils.time('osgjs.metric:ReaderParser.parseSceneGraph');
-
         var key;
         for (var prop in node) {
             if (prop !== 'Generator' && prop !== 'Version') {
@@ -70,15 +68,12 @@ ReaderParser.parseSceneGraph = function(node, options) {
             );
             input.setOptions(opt);
             var object = input.readObject();
-            utils.timeEnd('osgjs.metric:ReaderParser.parseSceneGraph');
             return object;
         } else {
             notify.log("can't parse scenegraph " + node);
         }
     } else {
-        utils.time('osgjs.metric:ReaderParser.parseSceneGraphDeprecated');
         var nodeOld = ReaderParser.parseSceneGraphDeprecated(node);
-        utils.timeEnd('osgjs.metric:ReaderParser.parseSceneGraphDeprecated');
         return nodeOld;
     }
     return undefined;
