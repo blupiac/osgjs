@@ -112,49 +112,29 @@
         return model;
     };
 
-    var createEffect = function(texture, target, center) {
-        var totalSizeX = 20;
-        var maxx = 20;
+    var createEffect = function() {
 
-        var sizex = totalSizeX / maxx;
-        var maxy = maxx / 4;
-
-        var size = [sizex, sizex, sizex];
+        var maxy = 5;
 
         var group = new osg.MatrixTransform();
-        var cb = new TransitionUpdateCallback(target);
+        var cb = new TransitionUpdateCallback([0, 0, 0]);
 
-        for (var y = 0; y < maxy; y++) {
-            for (var x = 0; x < maxx; x++) {
-                var mtr = new osg.MatrixTransform();
-                var rx = x * size[0] - maxx * size[0] * 0.5 + center[0];
-                var ry = 0 + center[1];
-                var rz = y * size[2] - maxy * size[2] * 0.5 + center[2];
-                mtr.setMatrix(osg.mat4.fromTranslation(osg.mat4.create(), [rx, ry, rz]));
-                var model = createTexturedBox(
-                    0,
-                    0,
-                    0,
-                    size[0],
-                    size[1],
-                    size[2],
-                    x / (maxx + 1),
-                    (x + 1) / (maxx + 1),
-                    y / (maxy + 1),
-                    (y + 1) / (maxy + 1)
-                );
-                model.getOrCreateStateSet().setTextureAttributeAndModes(0, texture);
+		var x = 0;
+        var y = 0;
 
-                mtr.addChild(model);
-                group.addChild(mtr);
-                mtr.addUpdateCallback(cb);
-                var t = (x * maxy + y) * 0.1;
-                mtr._lastUpdate = t;
-                mtr._start = t;
-                mtr._axis = [Math.random(), Math.random(), Math.random()];
-                osg.vec3.normalize(mtr._axis, mtr._axis);
-            }
-        }
+		var mtr = new osg.MatrixTransform();
+		mtr.setMatrix(osg.mat4.fromTranslation(osg.mat4.create(), [0, 0, 0]));
+		var model = osg.createTexturedBoxGeometry(0, 0, 0, 2, 2, 2);
+
+		mtr.addChild(model);
+		group.addChild(mtr);
+		mtr.addUpdateCallback(cb);
+		var t = 0;
+		mtr._lastUpdate = t;
+		mtr._start = t;
+		mtr._axis = [Math.random(), Math.random(), Math.random()];
+		osg.vec3.normalize(mtr._axis, mtr._axis);
+
         return group;
     };
 
@@ -162,11 +142,13 @@
         var root = new osg.Node();
 
         var target = new osg.MatrixTransform();
-        var targetModel = osg.createTexturedBoxGeometry(0, 0, 0, 2, 2, 2);
-        target.addChild(targetModel);
+		
         var material = new osg.Material();
-        material.setDiffuse([1, 0, 0, 1]);
+        material.setDiffuse([0.69, 0.09, 0.12, 1]);
         target.getOrCreateStateSet().setAttributeAndModes(material);
+
+        var targetModel = createEffect();
+		target.addChild(targetModel);
 
         root.addChild(target);
 
@@ -182,6 +164,7 @@
             alpha: true
         });
         viewer.init();
+		
         var rotate = new osg.MatrixTransform();
         rotate.addChild(createScene());
         viewer.getCamera().setClearColor([0.0, 0.0, 0.0, 0.0]);
