@@ -68,9 +68,8 @@
         return program;
     };
 
-    var loadModel = function(data, viewer, node, unifs) {
-        //var promise = osgDB.parseSceneGraph(data);
-        var promise = window.P.resolve( osg.createTexturedBoxGeometry(0, 0, 0, 2, 2, 2) );
+    var loadCube = function(viewer, node, unifs, centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) {
+        var promise = window.P.resolve( osg.createTexturedBoxGeometry(centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) );
 
         promise.then(function(child) {
             node.addChild(child);
@@ -90,20 +89,6 @@
             treeBuilder.apply(node);
             // console.timeEnd( 'build' );
         });
-    };
-
-    var loadUrl = function(url, viewer, node, unifs) {
-        osg.log('loading ' + url);
-        var req = new XMLHttpRequest();
-        req.open('GET', url, true);
-        req.onload = function() {
-            loadModel(JSON.parse(req.responseText), viewer, node, unifs);
-            osg.log('success ' + url);
-        };
-        req.onerror = function() {
-            osg.log('error ' + url);
-        };
-        req.send(null);
     };
 	
 	var createTexturedBox = function(centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) {
@@ -172,7 +157,8 @@
     var createScene = function(viewer, unifs) {
         var root = new osg.Node();
 
-        loadUrl('models/raceship.osgjs', viewer, root, unifs);
+		loadCube(viewer, root, unifs, 0, 0, -2, 2, 2, 2);
+		loadCube(viewer, root, unifs, 0, 0, 2, 2, 2, 2);
         root.getOrCreateStateSet().setAttributeAndModes(new osg.CullFace(osg.CullFace.DISABLE));
 
         var UpdateCallback = function() {
@@ -222,8 +208,6 @@
     })();
 
     var onMouseMove = function(canvas, viewer, unifs, ev) {
-        // TODO maybe doing some benchmark with a lot of geometry,
-        // since there's one kdtree per geometry ...
         // console.time( 'pick' );
 
         // take care of retina display canvas size
@@ -248,46 +232,35 @@
         //update shader uniform
         unifs.center.setVec3(point);
 
-        var pt = projectToScreen(viewer.getCamera(), hits[0]);
-
-        var ptx = parseInt(pt[0], 10) / ratioX;
-        var pty = parseInt(canvas.height - pt[1], 10) / ratioY;
-        var d = document.getElementById('picking');
-        d.textContent = 'x: ' + ptx.toFixed(2) + ' y: ' + pty.toFixed(2) + '\n' + ptFixed;
-
-        d.style.transform = 'translate3d(' + ptx + 'px,' + pty + 'px,0)';
-
         // sphere intersection
-        var runSphere = true;
-        if (runSphere) {
-            var osgUtil = OSG.osgUtil;
-            var si = new osgUtil.SphereIntersector();
-            //compute world point
-            //for sphere intersection
-            var worldPoint = osg.vec3.create();
-            myReservedMatrixStack.reset();
-            osg.vec3.transformMat4(
-                worldPoint,
-                point,
-                osg.computeLocalToWorld(
-                    hits[0]._nodePath.slice(1),
-                    true,
-                    myReservedMatrixStack.getOrCreateObject()
-                )
-            );
+		var osgUtil = OSG.osgUtil;
+		var si = new osgUtil.SphereIntersector();
+		//compute world point
+		//for sphere intersection
+		var worldPoint = osg.vec3.create();
+		myReservedMatrixStack.reset();
+		osg.vec3.transformMat4(
+			worldPoint,
+			point,
+			osg.computeLocalToWorld(
+				hits[0]._nodePath.slice(1),
+				true,
+				myReservedMatrixStack.getOrCreateObject()
+			)
+		);
 
-            si.set(
-                worldPoint,
-                viewer
-                    .getSceneData()
-                    .getBound()
-                    .radius() * 0.1
-            );
-            var iv = new osgUtil.IntersectionVisitor();
-            iv.setIntersector(si);
-            viewer.getSceneData().accept(iv);
-            // console.log( si.getIntersections().length );
-        }
+		si.set(
+			worldPoint,
+			viewer
+				.getSceneData()
+				.getBound()
+				.radius() * 0.1
+		);
+		var iv = new osgUtil.IntersectionVisitor();
+		iv.setIntersector(si);
+		viewer.getSceneData().accept(iv);
+		// console.log( si.getIntersections().length );
+
     };
 
     var onLoad = function() {
