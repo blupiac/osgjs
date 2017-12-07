@@ -16,6 +16,9 @@
             'attribute vec3 Vertex;',
             'attribute vec3 Normal;',
 
+			'uniform float uTime;',
+            'uniform float uRadiusSquared;',
+			
             'uniform vec3 uCenterPicking;',
             'uniform mat4 uModelViewMatrix;',
             'uniform mat4 uProjectionMatrix;',
@@ -29,7 +32,14 @@
             '  vInter = vec3( uModelViewMatrix * vec4( uCenterPicking, 1.0 ) );',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
             '  vViewVertex = vec3( uModelViewMatrix * vec4( Vertex, 1.0 ) );',
-            '  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 ));',
+			'  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
+            '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
+            '  vec3 vecDistance = ( vViewVertex - vInter );',
+            '  float dotSquared = dot( vecDistance, vecDistance );',
+            '  if ( dotSquared < uRadiusSquared )',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( vNormal, 1.0 );',
+            '  else',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 ));',
             '}'
         ].join('\n');
 
@@ -51,10 +61,8 @@
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
             '  vec3 vecDistance = ( vViewVertex - vInter );',
             '  float dotSquared = dot( vecDistance, vecDistance );',
-            '  if ( dotSquared < uRadiusSquared * 1.1 && dotSquared > uRadiusSquared*0.90 )',
+            '  if ( dotSquared < uRadiusSquared * 1.0 )',
             '    gl_FragColor = vec4( 0.75-t, 0.25+t, 0.0, 1.0 );',
-            '  else if ( dotSquared < uRadiusSquared )',
-            '    discard;',
             '  else',
             '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 );',
             '}'
@@ -153,14 +161,22 @@
 
         return model;
     };
+	
+	var aabb1min = [-1.0, -1.0, 1.0]; // min coords of aabb1
+	var aabb1max = [1.0, 1.0, 3.0]; // max coords of aabb1
+	var aabb2min = [-1.0, -1.0, -3.0]; // min coords of aabb2
+	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 
     var createScene = function(viewer, unifs) {
         var root = new osg.Node();
-
-		loadCube(viewer, root, unifs, 0, 0, -2, 2, 2, 2);
-		loadCube(viewer, root, unifs, 0, 0, 2, 2, 2, 2);
+		
+		// puts 2 cubes in the scene
+		loadCube(viewer, root, unifs, (aabb1min[0] + aabb1max[0])/2.0, (aabb1min[1] + aabb1max[1])/2.0, (aabb1min[2] + aabb1max[2])/2.0,
+										(aabb1max[0] - aabb1min[0]), (aabb1max[1] - aabb1min[1]), (aabb1max[2] - aabb1min[2]));
+		loadCube(viewer, root, unifs, (aabb2min[0] + aabb2max[0])/2.0, (aabb2min[1] + aabb2max[1])/2.0, (aabb2min[2] + aabb2max[2])/2.0,
+										(aabb2max[0] - aabb2min[0]), (aabb2max[1] - aabb2min[1]), (aabb2max[2] - aabb2min[2]));
         root.getOrCreateStateSet().setAttributeAndModes(new osg.CullFace(osg.CullFace.DISABLE));
-
+		
         var UpdateCallback = function() {
             this.baseTime_ = new Date().getTime();
             this.update = function() {
@@ -207,6 +223,20 @@
         };
     })();
 
+	var insideAABB = function(point, min, max) {
+		var epsilon = 0.001;
+		if((min[0] - point[0]) < epsilon && (point[0] - max[0]) < epsilon &&
+			(min[1] - point[1]) < epsilon && (point[1] - max[1]) < epsilon &&
+			(min[2] - point[2]) < epsilon && (point[2] - max[2]) < epsilon)
+		{
+			return true;
+		}
+		else		
+		{
+			return false;
+		}
+	};
+	
     var onMouseMove = function(canvas, viewer, unifs, ev) {
         // console.time( 'pick' );
 
@@ -227,10 +257,25 @@
 
         if (hits.length === 0) return;
         var point = hits[0]._localIntersectionPoint;
-        var ptFixed = [point[0].toFixed(2), point[1].toFixed(2), point[2].toFixed(2)];
 
         //update shader uniform
         unifs.center.setVec3(point);
+		
+		if(insideAABB(point, aabb1min, aabb1max))
+		{
+			unifs.hitCube.setInt1(1);
+			console.log( "1" );
+		}
+		else if(insideAABB(point, aabb2min, aabb2max))
+		{
+			unifs.hitCube.setInt1(2);
+			console.log( "2" );
+		}
+		else
+		{
+			unifs.hitCube.setInt1(0);
+			console.log( "0" );
+		}
 
         // sphere intersection
 		var osgUtil = OSG.osgUtil;
@@ -265,11 +310,12 @@
 
     var onLoad = function() {
         var canvas = document.getElementById('View');
-
+		
         var unifs = {
             center: osg.Uniform.createFloat3(new Float32Array(3), 'uCenterPicking'),
             radius2: osg.Uniform.createFloat1(0.1, 'uRadiusSquared'),
-            time: osg.Uniform.createFloat1(0.1, 'uTime')
+            time: osg.Uniform.createFloat1(0.1, 'uTime'),
+			hitCube: osg.Uniform.createInt1(0, 'uHitCube')
         };
 
         var viewer = new osgViewer.Viewer(canvas);
