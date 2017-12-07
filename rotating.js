@@ -124,7 +124,7 @@
     }
 
     var main = function() {
-        var canvas = document.getElementById('View');
+        var canvas = document.getElementById('Rotating');
 
         var viewer;
         viewer = new osgViewer.Viewer(canvas, {
