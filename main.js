@@ -7,43 +7,17 @@
     var osgAnimation = OSG.osgAnimation;
     var osgViewer = OSG.osgViewer;
 
-    var TransitionUpdateCallback = function(target) {
-        this._target = target;
+    var TransitionUpdateCallback = function() {
     };
     TransitionUpdateCallback.prototype = {
         update: function(node, nv) {
             var t = nv.getFrameStamp().getSimulationTime();
-            var dt = t - node._lastUpdate;
-            if (dt < 0) {
-                return true;
-            }
-            node._lastUpdate = t;
 
             var m = node.getMatrix();
             var current = [];
             osg.mat4.getTranslation(current, m);
-            var target = this._target;
-            var dx = target[0] - current[0];
-            var dy = target[1] - current[1];
-            var dz = target[2] - current[2];
 
-            var speedSqr = dx * dx + dy * dy + dz * dz;
-            var maxSpeed = 10.0;
-            var maxSpeedSqr = maxSpeed * maxSpeed;
-            if (speedSqr > maxSpeedSqr) {
-                var quot = maxSpeed / Math.sqrt(speedSqr);
-                dx *= quot;
-                dy *= quot;
-                dz *= quot;
-            }
-            //osg.log('speed ' + Math.sqrt(dx*dx + dy*dy + dz*dz) );
-
-            var ratio = osgAnimation.EaseInQuad(Math.min((t - node._start) / 2.0, 1.0));
-            current[0] += dx * dt * ratio;
-            current[1] += dy * dt * ratio;
-            current[2] += dz * dt * ratio;
-
-            osg.mat4.fromRotation(m, -(t - node._start) * ratio, node._axis);
+            osg.mat4.fromRotation(m, -(t - node._start), node._axis);
             osg.mat4.setTranslation(m, current);
             return true;
         }
@@ -114,28 +88,22 @@
 
     var createEffect = function() {
 
-        var maxy = 5;
-
-        var group = new osg.MatrixTransform();
-        var cb = new TransitionUpdateCallback([0, 0, 0]);
-
-		var x = 0;
-        var y = 0;
+        var square = new osg.MatrixTransform();
+        var cb = new TransitionUpdateCallback();
 
 		var mtr = new osg.MatrixTransform();
 		mtr.setMatrix(osg.mat4.fromTranslation(osg.mat4.create(), [0, 0, 0]));
 		var model = osg.createTexturedBoxGeometry(0, 0, 0, 2, 2, 2);
 
 		mtr.addChild(model);
-		group.addChild(mtr);
+		square.addChild(mtr);
 		mtr.addUpdateCallback(cb);
-		var t = 0;
-		mtr._lastUpdate = t;
-		mtr._start = t;
+		mtr._lastUpdate = 0;
+		mtr._start = 0;
 		mtr._axis = [Math.random(), Math.random(), Math.random()];
 		osg.vec3.normalize(mtr._axis, mtr._axis);
 
-        return group;
+        return square;
     };
 
     function createScene() {
