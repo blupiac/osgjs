@@ -28,15 +28,12 @@
 			'uniform vec3 uAABB2min;',
 			'uniform vec3 uAABB2max;',
 			'uniform float uTime;',
-            'uniform float uRadiusSquared;',
 			
-            'uniform vec3 uCenterPicking;',
             'uniform mat4 uModelViewMatrix;',
             'uniform mat4 uProjectionMatrix;',
             'uniform mat3 uModelViewNormalMatrix;',
 			
             'varying vec3 vNormal;',
-            'varying vec3 vInter;',
 			'varying vec3 distortion;',
 
 			'bool isOnIntersectedCube( vec3 point ) {',
@@ -55,7 +52,6 @@
             '}',
 			
             'void main( void ) {',
-            '  vInter = vec3( uModelViewMatrix * vec4( uCenterPicking, 1.0 ) );',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
 			'  float t = mod( uTime * 0.5, 3141.6 ) / 3141.6;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
@@ -99,8 +95,6 @@
 
         promise.then(function(child) {
             node.addChild(child);
-			
-            unifs.radius2.setFloat(child.getBound().radius2() * 0.02);
 
             // console.time( 'build' );
             var treeBuilder = new osg.KdTreeBuilder({
@@ -180,8 +174,6 @@
         var root = new osg.Node();
 		
 		root.getOrCreateStateSet().setAttributeAndModes(getShader());
-		root.getOrCreateStateSet().addUniform(unifs.center);
-		root.getOrCreateStateSet().addUniform(unifs.radius2);
 		root.getOrCreateStateSet().addUniform(unifs.time);
 		root.getOrCreateStateSet().addUniform(unifs.hitCube);
 		root.getOrCreateStateSet().addUniform(unifs.aabb1min);
@@ -281,9 +273,6 @@
 			return;
 		}
         var point = hits[0]._localIntersectionPoint;
-
-        //update shader uniform
-        unifs.center.setVec3(point);
 		
 		if(insideAABB(point, aabb1min, aabb1max))
 		{
@@ -294,43 +283,12 @@
 			hitCube = 2;
 		}
 
-        // sphere intersection
-		var osgUtil = OSG.osgUtil;
-		var si = new osgUtil.SphereIntersector();
-		//compute world point
-		//for sphere intersection
-		var worldPoint = osg.vec3.create();
-		myReservedMatrixStack.reset();
-		osg.vec3.transformMat4(
-			worldPoint,
-			point,
-			osg.computeLocalToWorld(
-				hits[0]._nodePath.slice(1),
-				true,
-				myReservedMatrixStack.getOrCreateObject()
-			)
-		);
-
-		si.set(
-			worldPoint,
-			viewer
-				.getSceneData()
-				.getBound()
-				.radius() * 0.1
-		);
-		var iv = new osgUtil.IntersectionVisitor();
-		iv.setIntersector(si);
-		viewer.getSceneData().accept(iv);
-		// console.log( si.getIntersections().length );
-
     };
 
     var onLoad = function() {
         var canvas = document.getElementById('View');
 		
         var unifs = {
-            center: osg.Uniform.createFloat3(new Float32Array(3), 'uCenterPicking'),
-            radius2: osg.Uniform.createFloat1(0.1, 'uRadiusSquared'),
             time: osg.Uniform.createFloat1(0.1, 'uTime'),
 		    time2: osg.Uniform.createInt1(0.1, 'uTime2'),
 			hitCube: osg.Uniform.createInt1(1, 'uHitCube'),
