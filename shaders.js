@@ -28,7 +28,6 @@
 			'uniform vec3 uAABB2min;',
 			'uniform vec3 uAABB2max;',
 			'uniform float uTime;',
-			'uniform float uTime2;',
             'uniform float uRadiusSquared;',
 			
             'uniform vec3 uCenterPicking;',
@@ -36,15 +35,15 @@
             'uniform mat4 uProjectionMatrix;',
             'uniform mat3 uModelViewNormalMatrix;',
 			
-            'varying vec3 vViewVertex;',
             'varying vec3 vNormal;',
             'varying vec3 vInter;',
+			'varying vec3 distortion;',
 
 			'bool isOnIntersectedCube( vec3 point ) {',
             '  float epsilon = 0.001;',
 			'  if(uHitCube == 1 &&(uAABB1min[0] <= point[0]) && (point[0] <= uAABB1max[0]) &&',
 			'		(uAABB1min[1] <= point[1]) && (point[1] <= uAABB1max[1]) && ',
-			'       (uAABB1min[2] <= point[2]) && (point[2] <= uAABB1max[2])) {',
+			'       (uAABB1min[2] <= point[2]) && (point[2] <= uAABB1max[2])) {', 
 			'    return true;',
 			'  }',
 			'  if(uHitCube == 2 &&(uAABB2min[0] <= point[0]) && (point[0] <= uAABB2max[0]) &&',
@@ -58,11 +57,12 @@
             'void main( void ) {',
             '  vInter = vec3( uModelViewMatrix * vec4( uCenterPicking, 1.0 ) );',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
-            '  vViewVertex = vec3( uModelViewMatrix * vec4( Vertex, 1.0 ) );',
-			'  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
+			'  float t = mod( uTime * 0.5, 3141.6 ) / 3141.6;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '  if ( isOnIntersectedCube( Vertex ) )',
-			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( Normal, 1.0 );',
+            '  if ( isOnIntersectedCube( Vertex ) ) {',
+			'    distortion = Vertex * vec3( sin(t * 5.0) , tan(t * 2.0) , sin(t * 3.0) );',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( distortion, 1.0 );',
+			'  }',
             '  else',
 			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 ));',
             '}'
@@ -75,21 +75,14 @@
             '#endif',
 
             'uniform float uTime;',
-            'uniform float uRadiusSquared;',
 
-            'varying vec3 vViewVertex;',
             'varying vec3 vNormal;',
-            'varying vec3 vInter;',
+			'varying vec3 distortion;',
 
             'void main( void ) {',
             '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '  vec3 vecDistance = ( vViewVertex - vInter );',
-            '  float dotSquared = dot( vecDistance, vecDistance );',
-            '  if ( dotSquared < uRadiusSquared * 1.0 )',
-            '    gl_FragColor = vec4( 0.75-t, 0.25+t, 0.0, 1.0 );',
-            '  else',
-            '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 );',
+            '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) + vec4( distortion , 1.0 );',
             '}'
         ].join('\n');
 
