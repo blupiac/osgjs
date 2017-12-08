@@ -18,7 +18,7 @@
 	var aabb2min = [-1.0, -1.0, -3.0]; // min coords of aabb2
 	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 	var hitCube;
-	var startTime = 0.1;
+	var seed = [0.2, 0.7]; // seed for julia shader
 	var shaderPal = new osg.Texture();
 
     var getShader = function() {
@@ -47,7 +47,7 @@
 			'varying vec2 vTexCoord;',
 			'varying vec3 distortion;',
 
-			// checks if the point is on a cube that is behind the mouse
+			// checks if the point is on the cube that is behind the mouse
 			'int isOnIntersectedCube( vec3 point ) {',
 			'  if(uHitCube == 1 &&(uAABB1min[0] <= point[0]) && (point[0] <= uAABB1max[0]) &&',
 			'		(uAABB1min[1] <= point[1]) && (point[1] <= uAABB1max[1]) && ',
@@ -89,31 +89,35 @@
             '#endif',
 
             'uniform float uTime;',
-			'uniform sampler2D palette;',
+			'uniform sampler2D Texture0;',
+			'uniform vec2 uSeed;',
 
             'varying vec3 vNormal;',
 			'varying vec2 vTexCoord;',
 			'varying vec3 distortion;',
+			
+			// variable for the julia shader
+			'const int max_its = 60;',
 
-			// interpolation between 2 colors using the distortion calculated on the vertex shader
+			// Julia shader: http://nuclear.mutantstargoat.com/articles/sdr_fract/
             'void main( void ) {',
-			'  vec2 z;', // Julia shader: http://nuclear.mutantstargoat.com/articles/sdr_fract/
+			'  vec2 z;',
 			'  z.x = 3.0 * (vTexCoord.x - 0.5);',
 			'  z.y = 2.0 * (vTexCoord.y - 0.5);',
 			'  int it = 0;',
-			'  for(int i = 0; i<3; i++) {',
-			'    float x = (z.x * z.x - z.y * z.y) + 2.5;',
-			'    float y = (z.y * z.x + z.x * z.y) + 3.8;',
+			'  for(int i = 0; i < max_its; i++) {',
+			'    float x = (z.x * z.x - z.y * z.y) + uSeed.x;',
+			'    float y = (z.y * z.x + z.x * z.y) + uSeed.y;',
 			'    if((x * x + y * y) > 4.0) break;',
 			'    z.x = x;',
 			'    z.y = y;',
 			'    it = i;',
 			'  }',
-//			'  gl_FragColor = texture2D(palette, vec2((it == 3 ? 0.0 : float(it)) / 100.0, 0));',
-            '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
-            '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '  gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
-            '		               + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
+			'  gl_FragColor = texture2D(Texture0, vec2((it == max_its ? 0.0 : float(it)) / 100.0, 0));',
+//            '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
+//            '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
+//            '  gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
+//            '		               + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
             '}'
         ].join('\n');
 
@@ -211,15 +215,22 @@
     var createScene = function(viewer, unifs) {
         var root = new osg.Node();
 		
+        osgDB.readImageURL('textures/fractalPalette.png').then(function(image) {
+            shaderPal.setImage(image);
+        });
+		
+		shaderPal.setMinFilter( 'LINEAR' );
+        shaderPal.setMagFilter( 'LINEAR' );
+		
 		root.getOrCreateStateSet().setAttributeAndModes(getShader());
 		root.getOrCreateStateSet().setTextureAttributeAndModes( 0, shaderPal );
-        root.getOrCreateStateSet().addUniform( osg.Uniform.createInt1( 0, 'palette' ) );
 		root.getOrCreateStateSet().addUniform(unifs.time);
 		root.getOrCreateStateSet().addUniform(unifs.hitCube);
 		root.getOrCreateStateSet().addUniform(unifs.aabb1min);
 		root.getOrCreateStateSet().addUniform(unifs.aabb1max);
 		root.getOrCreateStateSet().addUniform(unifs.aabb2min);
 		root.getOrCreateStateSet().addUniform(unifs.aabb2max);
+		root.getOrCreateStateSet().addUniform(unifs.seed);
 		
 		// puts 2 cubes in the scene
 		loadCube(viewer, root, unifs, (aabb1min[0] + aabb1max[0])/2.0, (aabb1min[1] + aabb1max[1])/2.0, (aabb1min[2] + aabb1max[2])/2.0,
@@ -327,14 +338,6 @@
     var onLoad = function() {
         var canvas = document.getElementById('View');
 		
-		var shaderPal = new osg.Texture();
-        osgDB.readImageURL('textures/fractalPalette.png').then(function(image) {
-            shaderPal.setImage(image);
-        });
-		
-		shaderPal.setMinFilter( 'LINEAR' );
-        shaderPal.setMagFilter( 'LINEAR' );
-		
         var unifs = {
             time: osg.Uniform.createFloat1(0.1, 'uTime'),
 			hitCube: osg.Uniform.createInt1(1, 'uHitCube'),
@@ -342,6 +345,7 @@
 			aabb1max: osg.Uniform.createFloat3(aabb1max, 'uAABB1max'),
 			aabb2min: osg.Uniform.createFloat3(aabb2min, 'uAABB2min'),
 			aabb2max: osg.Uniform.createFloat3(aabb2max, 'uAABB2max'),
+			seed: osg.Uniform.createFloat2(seed, 'uSeed')
         };
 
         var viewer = new osgViewer.Viewer(canvas);
