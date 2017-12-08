@@ -97,18 +97,18 @@
 			'varying vec3 distortion;',
 			
 			// variable for the julia shader
-			'const int max_its = 60;',
+			'const int max_its = 20;',
 
 			// Julia shader: http://nuclear.mutantstargoat.com/articles/sdr_fract/
             'void main( void ) {',
 			'  vec2 z;',
 			'  z.x = 3.0 * (vTexCoord.x - 0.5);',
-			'  z.y = 2.0 * (vTexCoord.y - 0.5);',
+			'  z.y = 3.0 * (vTexCoord.y - 0.5);',
 			'  int it = 0;',
 			'  for(int i = 0; i < max_its; i++) {',
 			'    float x = (z.x * z.x - z.y * z.y) + uSeed.x;',
 			'    float y = (z.y * z.x + z.x * z.y) + uSeed.y;',
-			'    if((x * x + y * y) > 4.0) break;',
+			'    if((x * x + y * y) > 10.0) break;',
 			'    z.x = x;',
 			'    z.y = y;',
 			'    it = i;',
@@ -243,6 +243,14 @@
             this.update = function() {
                 unifs.time.setFloat(new Date().getTime() - this.baseTime_);
 				unifs.hitCube.setInt(hitCube);
+				
+				// update julia seed
+				var t = (new Date().getTime() - this.baseTime_) / 1000.0;
+				var cx = (Math.sin(Math.cos(t / 10) * 10) + Math.cos(t * 2.0) / 4.0 + Math.sin(t * 3.0) / 6.0) * 0.8;
+				var cy = (Math.cos(Math.sin(t / 10) * 10) + Math.sin(t * 2.0) / 4.0 + Math.cos(t * 3.0) / 6.0) * 0.8;
+				
+				unifs.seed.setFloat2([cx, cy]);
+		
                 return true;
             };
         };
