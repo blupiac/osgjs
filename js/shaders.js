@@ -2,9 +2,16 @@
     'use strict';
 
     var OSG = window.OSG;
-    var osg = OSG.osg;
     var osgViewer = OSG.osgViewer;
+    var osgUtil = OSG.osgUtil;
+    var osgShader = OSG.osgShader;
+
     var osgDB = OSG.osgDB;
+    var requestFile = osgDB.requestFile;
+
+    var osg = OSG.osg;
+
+    var P = window.P;
 	
 	var aabb1min = [-1.0, -1.0, 1.0]; // min coords of aabb1
 	var aabb1max = [1.0, 1.0, 3.0]; // max coords of aabb1
@@ -12,6 +19,7 @@
 	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 	var hitCube;
 	var startTime = 0.1;
+	var shaderPal = new osg.Texture();
 
     var getShader = function() {
         var vertexshader = [
@@ -19,9 +27,10 @@
             '#ifdef GL_ES',
             'precision highp float;',
             '#endif',
-
+			
             'attribute vec3 Vertex;',
             'attribute vec3 Normal;',
+			'attribute vec2 TexCoord0;',
 
 			'uniform int uHitCube;',
 			'uniform vec3 uAABB1min;',
@@ -35,6 +44,7 @@
             'uniform mat3 uModelViewNormalMatrix;',
 			
             'varying vec3 vNormal;',
+			'varying vec2 vTexCoord;',
 			'varying vec3 distortion;',
 
 			// checks if the point is on a cube that is behind the mouse
@@ -53,16 +63,17 @@
             '}',
 			
             'void main( void ) {',
+			'  vTexCoord = TexCoord0;',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
 			'  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
             '  if ( isOnIntersectedCube( Vertex ) == 1 ) {', // each cube has its own distortion function
 			'    distortion = Vertex * vec3( -cos(t * 2.0 + 3.1416 / 2.0) , -sin(t * 2.0) , cos(t * 3.0 + 3.1416 / 2.0) );',
-			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( distortion, 1.0 );',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4(distortion, 1.0);',
 			'  }',
 			'  else if ( isOnIntersectedCube( Vertex ) == 2 ) {',
 			'    distortion = Vertex * vec3( sin(t * 3.0) , -cos(t * 3.5 + 3.1416 / 2.0) , sin(t * 2.0) );',
-			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( distortion, 1.0 );',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4(distortion, 1.0);',
 			'  }',
             '  else {',
 			'    distortion = vec3( 0.0, 0.0, 0.0 );',
@@ -78,16 +89,31 @@
             '#endif',
 
             'uniform float uTime;',
+			'uniform sampler2D palette;',
 
             'varying vec3 vNormal;',
+			'varying vec2 vTexCoord;',
 			'varying vec3 distortion;',
 
 			// interpolation between 2 colors using the distortion calculated on the vertex shader
             'void main( void ) {',
+			'  vec2 z;', // Julia shader: http://nuclear.mutantstargoat.com/articles/sdr_fract/
+			'  z.x = 3.0 * (vTexCoord.x - 0.5);',
+			'  z.y = 2.0 * (vTexCoord.y - 0.5);',
+			'  int it = 0;',
+			'  for(int i = 0; i<3; i++) {',
+			'    float x = (z.x * z.x - z.y * z.y) + 2.5;',
+			'    float y = (z.y * z.x + z.x * z.y) + 3.8;',
+			'    if((x * x + y * y) > 4.0) break;',
+			'    z.x = x;',
+			'    z.y = y;',
+			'    it = i;',
+			'  }',
+//			'  gl_FragColor = texture2D(palette, vec2((it == 3 ? 0.0 : float(it)) / 100.0, 0));',
             '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
-            '			        + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
+            '  gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
+            '		               + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
             '}'
         ].join('\n');
 
@@ -117,7 +143,7 @@
     };
 	
 	// taken from moving cubes example
-	var createTexturedBox = function(centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) {
+	var createTexturedBox = function(texcoordNum, centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) {
         var model = osg.createTexturedBoxGeometry(centerx, centery, centerz, sizex, sizey, sizez);
 
         var uvs = model.getAttributes().TexCoord0;
@@ -141,41 +167,43 @@
         array[14] = r;
         array[15] = t;
 
-        array[16] = 0;
-        array[17] = 0;
-        array[18] = 0;
-        array[19] = 0;
-        array[20] = 0;
-        array[21] = 0;
-        array[22] = 0;
-        array[23] = 0;
+        array[16] = l;
+        array[17] = t;
+        array[18] = l;
+        array[19] = b;
+        array[20] = r;
+        array[21] = b;
+        array[22] = r;
+        array[23] = t;
 
-        array[24] = 0;
-        array[25] = 0;
-        array[26] = 0;
-        array[27] = 0;
-        array[28] = 0;
-        array[29] = 0;
-        array[30] = 0;
-        array[31] = 0;
+        array[24] = l;
+        array[25] = t;
+        array[26] = l;
+        array[27] = b;
+        array[28] = r;
+        array[29] = b;
+        array[30] = r;
+        array[31] = t;
 
-        array[32] = 0;
-        array[33] = 0;
-        array[34] = 0;
-        array[35] = 0;
-        array[36] = 0;
-        array[37] = 0;
-        array[38] = 0;
-        array[39] = 0;
+        array[32] = l;
+        array[33] = t;
+        array[34] = l;
+        array[35] = b;
+        array[36] = r;
+        array[37] = b;
+        array[38] = r;
+        array[39] = t;
 
-        array[40] = 0;
-        array[41] = 0;
-        array[42] = 0;
-        array[43] = 0;
-        array[44] = 0;
-        array[45] = 0;
-        array[46] = 0;
-        array[47] = 0;
+        array[40] = l;
+        array[41] = t;
+        array[42] = l;
+        array[43] = b;
+        array[44] = r;
+        array[45] = b;
+        array[46] = r;
+        array[47] = t;
+		
+		model.setTexCoordArray(0, array);
 
         return model;
     };
@@ -184,6 +212,8 @@
         var root = new osg.Node();
 		
 		root.getOrCreateStateSet().setAttributeAndModes(getShader());
+		root.getOrCreateStateSet().setTextureAttributeAndModes( 0, shaderPal );
+        root.getOrCreateStateSet().addUniform( osg.Uniform.createInt1( 0, 'palette' ) );
 		root.getOrCreateStateSet().addUniform(unifs.time);
 		root.getOrCreateStateSet().addUniform(unifs.hitCube);
 		root.getOrCreateStateSet().addUniform(unifs.aabb1min);
@@ -297,21 +327,30 @@
     var onLoad = function() {
         var canvas = document.getElementById('View');
 		
+		var shaderPal = new osg.Texture();
+        osgDB.readImageURL('textures/fractalPalette.png').then(function(image) {
+            shaderPal.setImage(image);
+        });
+		
+		shaderPal.setMinFilter( 'LINEAR' );
+        shaderPal.setMagFilter( 'LINEAR' );
+		
         var unifs = {
             time: osg.Uniform.createFloat1(0.1, 'uTime'),
 			hitCube: osg.Uniform.createInt1(1, 'uHitCube'),
 			aabb1min: osg.Uniform.createFloat3(aabb1min, 'uAABB1min'),
 			aabb1max: osg.Uniform.createFloat3(aabb1max, 'uAABB1max'),
 			aabb2min: osg.Uniform.createFloat3(aabb2min, 'uAABB2min'),
-			aabb2max: osg.Uniform.createFloat3(aabb2max, 'uAABB2max')
+			aabb2max: osg.Uniform.createFloat3(aabb2max, 'uAABB2max'),
         };
 
         var viewer = new osgViewer.Viewer(canvas);
+	    var cam = viewer.getCamera();
         viewer.init();
         viewer.setSceneData(createScene(viewer, unifs));
-        viewer.setupManipulator();
+        viewer.setupManipulator();		
         viewer.run();
-
+		
         canvas.addEventListener('mousemove', onMouseMove.bind(this, canvas, viewer, unifs), true);
     };
 
