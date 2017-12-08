@@ -11,6 +11,7 @@
 	var aabb2min = [-1.0, -1.0, -3.0]; // min coords of aabb2
 	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 	var hitCube;
+	var startTime = 0.1;
 
     var getShader = function() {
         var vertexshader = [
@@ -36,31 +37,37 @@
             'varying vec3 vNormal;',
 			'varying vec3 distortion;',
 
-			'bool isOnIntersectedCube( vec3 point ) {',
-            '  float epsilon = 0.001;',
+			// checks if the point is on a cube that is behind the mouse
+			'int isOnIntersectedCube( vec3 point ) {',
 			'  if(uHitCube == 1 &&(uAABB1min[0] <= point[0]) && (point[0] <= uAABB1max[0]) &&',
 			'		(uAABB1min[1] <= point[1]) && (point[1] <= uAABB1max[1]) && ',
 			'       (uAABB1min[2] <= point[2]) && (point[2] <= uAABB1max[2])) {', 
-			'    return true;',
+			'    return 1;',
 			'  }',
 			'  if(uHitCube == 2 &&(uAABB2min[0] <= point[0]) && (point[0] <= uAABB2max[0]) &&',
 			'		(uAABB2min[1] <= point[1]) && (point[1] <= uAABB2max[1]) && ',
 			'       (uAABB2min[2] <= point[2]) && (point[2] <= uAABB2max[2])) {',
-			'    return true;',
+			'    return 2;',
 			'  }',
-			'  return false;',
+			'  return 0;',
             '}',
 			
             'void main( void ) {',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
-			'  float t = mod( uTime * 0.5, 3141.6 ) / 3141.6;', // time [0..1]
+			'  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '  if ( isOnIntersectedCube( Vertex ) ) {',
-			'    distortion = Vertex * vec3( sin(t * 5.0) , tan(t * 2.0) , sin(t * 3.0) );',
+            '  if ( isOnIntersectedCube( Vertex ) == 1 ) {', // each cube has its own distortion function
+			'    distortion = Vertex * vec3( -cos(t * 2.0 + 3.1416 / 2.0) , -sin(t * 2.0) , cos(t * 3.0 + 3.1416 / 2.0) );',
 			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( distortion, 1.0 );',
 			'  }',
-            '  else',
+			'  else if ( isOnIntersectedCube( Vertex ) == 2 ) {',
+			'    distortion = Vertex * vec3( sin(t * 3.0) , -cos(t * 3.5 + 3.1416 / 2.0) , sin(t * 2.0) );',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( distortion, 1.0 );',
+			'  }',
+            '  else {',
+			'    distortion = vec3( 0.0, 0.0, 0.0 );',
 			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 ));',
+			'  }',
             '}'
         ].join('\n');
 
@@ -75,10 +82,12 @@
             'varying vec3 vNormal;',
 			'varying vec3 distortion;',
 
+			// interpolation between 2 colors using the distortion calculated on the vertex shader
             'void main( void ) {',
             '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) + vec4( distortion , 1.0 );',
+            '    gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
+            '			        + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
             '}'
         ].join('\n');
 
@@ -107,6 +116,7 @@
         });
     };
 	
+	// taken from moving cubes example
 	var createTexturedBox = function(centerx, centery, centerz, sizex, sizey, sizez, l, r, b, t) {
         var model = osg.createTexturedBoxGeometry(centerx, centery, centerz, sizex, sizey, sizez);
 
@@ -186,7 +196,6 @@
 										(aabb1max[0] - aabb1min[0]), (aabb1max[1] - aabb1min[1]), (aabb1max[2] - aabb1min[2]));
 		loadCube(viewer, root, unifs, (aabb2min[0] + aabb2max[0])/2.0, (aabb2min[1] + aabb2max[1])/2.0, (aabb2min[2] + aabb2max[2])/2.0,
 										(aabb2max[0] - aabb2min[0]), (aabb2max[1] - aabb2min[1]), (aabb2max[2] - aabb2min[2]));
-        root.getOrCreateStateSet().setAttributeAndModes(new osg.CullFace(osg.CullFace.DISABLE));
 		
         var UpdateCallback = function() {
             this.baseTime_ = new Date().getTime();
@@ -290,7 +299,6 @@
 		
         var unifs = {
             time: osg.Uniform.createFloat1(0.1, 'uTime'),
-		    time2: osg.Uniform.createInt1(0.1, 'uTime2'),
 			hitCube: osg.Uniform.createInt1(1, 'uHitCube'),
 			aabb1min: osg.Uniform.createFloat3(aabb1min, 'uAABB1min'),
 			aabb1max: osg.Uniform.createFloat3(aabb1max, 'uAABB1max'),
