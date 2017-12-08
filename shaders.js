@@ -5,6 +5,12 @@
     var osg = OSG.osg;
     var osgViewer = OSG.osgViewer;
     var osgDB = OSG.osgDB;
+	
+	var aabb1min = [-1.0, -1.0, 1.0]; // min coords of aabb1
+	var aabb1max = [1.0, 1.0, 3.0]; // max coords of aabb1
+	var aabb2min = [-1.0, -1.0, -3.0]; // min coords of aabb2
+	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
+	var hitCube;
 
     var getShader = function() {
         var vertexshader = [
@@ -16,28 +22,47 @@
             'attribute vec3 Vertex;',
             'attribute vec3 Normal;',
 
+			'uniform int uHitCube;',
+			'uniform vec3 uAABB1min;',
+			'uniform vec3 uAABB1max;',
+			'uniform vec3 uAABB2min;',
+			'uniform vec3 uAABB2max;',
 			'uniform float uTime;',
+			'uniform float uTime2;',
             'uniform float uRadiusSquared;',
 			
             'uniform vec3 uCenterPicking;',
             'uniform mat4 uModelViewMatrix;',
             'uniform mat4 uProjectionMatrix;',
             'uniform mat3 uModelViewNormalMatrix;',
-
+			
             'varying vec3 vViewVertex;',
             'varying vec3 vNormal;',
             'varying vec3 vInter;',
 
+			'bool isOnIntersectedCube( vec3 point ) {',
+            '  float epsilon = 0.001;',
+			'  if(uHitCube == 1 &&(uAABB1min[0] <= point[0]) && (point[0] <= uAABB1max[0]) &&',
+			'		(uAABB1min[1] <= point[1]) && (point[1] <= uAABB1max[1]) && ',
+			'       (uAABB1min[2] <= point[2]) && (point[2] <= uAABB1max[2])) {',
+			'    return true;',
+			'  }',
+			'  if(uHitCube == 2 &&(uAABB2min[0] <= point[0]) && (point[0] <= uAABB2max[0]) &&',
+			'		(uAABB2min[1] <= point[1]) && (point[1] <= uAABB2max[1]) && ',
+			'       (uAABB2min[2] <= point[2]) && (point[2] <= uAABB2max[2])) {',
+			'    return true;',
+			'  }',
+			'  return false;',
+            '}',
+			
             'void main( void ) {',
             '  vInter = vec3( uModelViewMatrix * vec4( uCenterPicking, 1.0 ) );',
             '  vNormal = normalize( uModelViewNormalMatrix * Normal );',
             '  vViewVertex = vec3( uModelViewMatrix * vec4( Vertex, 1.0 ) );',
 			'  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
             '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-            '  vec3 vecDistance = ( vViewVertex - vInter );',
-            '  float dotSquared = dot( vecDistance, vecDistance );',
-            '  if ( dotSquared < uRadiusSquared )',
-			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( vNormal, 1.0 );',
+            '  if ( isOnIntersectedCube( Vertex ) )',
+			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 )) + vec4( Normal, 1.0 );',
             '  else',
 			'    gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4( Vertex, 1.0 ));',
             '}'
@@ -81,11 +106,7 @@
 
         promise.then(function(child) {
             node.addChild(child);
-
-            child.getOrCreateStateSet().setAttributeAndModes(getShader());
-            child.getOrCreateStateSet().addUniform(unifs.center);
-            child.getOrCreateStateSet().addUniform(unifs.radius2);
-            child.getOrCreateStateSet().addUniform(unifs.time);
+			
             unifs.radius2.setFloat(child.getBound().radius2() * 0.02);
 
             // console.time( 'build' );
@@ -161,14 +182,19 @@
 
         return model;
     };
-	
-	var aabb1min = [-1.0, -1.0, 1.0]; // min coords of aabb1
-	var aabb1max = [1.0, 1.0, 3.0]; // max coords of aabb1
-	var aabb2min = [-1.0, -1.0, -3.0]; // min coords of aabb2
-	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 
     var createScene = function(viewer, unifs) {
         var root = new osg.Node();
+		
+		root.getOrCreateStateSet().setAttributeAndModes(getShader());
+		root.getOrCreateStateSet().addUniform(unifs.center);
+		root.getOrCreateStateSet().addUniform(unifs.radius2);
+		root.getOrCreateStateSet().addUniform(unifs.time);
+		root.getOrCreateStateSet().addUniform(unifs.hitCube);
+		root.getOrCreateStateSet().addUniform(unifs.aabb1min);
+		root.getOrCreateStateSet().addUniform(unifs.aabb1max);
+		root.getOrCreateStateSet().addUniform(unifs.aabb2min);
+		root.getOrCreateStateSet().addUniform(unifs.aabb2max);
 		
 		// puts 2 cubes in the scene
 		loadCube(viewer, root, unifs, (aabb1min[0] + aabb1max[0])/2.0, (aabb1min[1] + aabb1max[1])/2.0, (aabb1min[2] + aabb1max[2])/2.0,
@@ -181,6 +207,7 @@
             this.baseTime_ = new Date().getTime();
             this.update = function() {
                 unifs.time.setFloat(new Date().getTime() - this.baseTime_);
+				unifs.hitCube.setInt(hitCube);
                 return true;
             };
         };
@@ -255,7 +282,11 @@
             return a._ratio - b._ratio;
         });
 
-        if (hits.length === 0) return;
+        if (hits.length === 0)
+		{
+			hitCube = 0;
+			return;
+		}
         var point = hits[0]._localIntersectionPoint;
 
         //update shader uniform
@@ -263,18 +294,11 @@
 		
 		if(insideAABB(point, aabb1min, aabb1max))
 		{
-			unifs.hitCube.setInt1(1);
-			console.log( "1" );
+			hitCube = 1;
 		}
 		else if(insideAABB(point, aabb2min, aabb2max))
 		{
-			unifs.hitCube.setInt1(2);
-			console.log( "2" );
-		}
-		else
-		{
-			unifs.hitCube.setInt1(0);
-			console.log( "0" );
+			hitCube = 2;
 		}
 
         // sphere intersection
@@ -315,7 +339,12 @@
             center: osg.Uniform.createFloat3(new Float32Array(3), 'uCenterPicking'),
             radius2: osg.Uniform.createFloat1(0.1, 'uRadiusSquared'),
             time: osg.Uniform.createFloat1(0.1, 'uTime'),
-			hitCube: osg.Uniform.createInt1(0, 'uHitCube')
+		    time2: osg.Uniform.createInt1(0.1, 'uTime2'),
+			hitCube: osg.Uniform.createInt1(1, 'uHitCube'),
+			aabb1min: osg.Uniform.createFloat3(aabb1min, 'uAABB1min'),
+			aabb1max: osg.Uniform.createFloat3(aabb1max, 'uAABB1max'),
+			aabb2min: osg.Uniform.createFloat3(aabb2min, 'uAABB2min'),
+			aabb2max: osg.Uniform.createFloat3(aabb2max, 'uAABB2max')
         };
 
         var viewer = new osgViewer.Viewer(canvas);
