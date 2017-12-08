@@ -19,6 +19,7 @@
 	var aabb2max = [1.0, 1.0, -1.0]; // max coords of aabb2
 	var hitCube;
 	var seed = [0.2, 0.7]; // seed for julia shader
+	var staticSeed = [0.2, 0.7]; // seed for julia shader
 	var shaderPal = new osg.Texture();
 
     var getShader = function() {
@@ -91,6 +92,7 @@
             'uniform float uTime;',
 			'uniform sampler2D Texture0;',
 			'uniform vec2 uSeed;',
+			'uniform vec2 uStaticSeed;',
 
             'varying vec3 vNormal;',
 			'varying vec2 vTexCoord;',
@@ -100,24 +102,25 @@
 			'const int max_its = 20;',
 
 			// Julia shader: http://nuclear.mutantstargoat.com/articles/sdr_fract/
+			// and https://github.com/haldean/julia
             'void main( void ) {',
-			'  vec2 z;',
+			'  vec2 z, c;',
+			'  if(distortion.x != 0.0 || distortion.y != 0.0 || distortion.x != 0.0)',
+			'    c = uSeed;',
+			'  else',
+			'    c = uStaticSeed;',
 			'  z.x = 3.0 * (vTexCoord.x - 0.5);',
 			'  z.y = 3.0 * (vTexCoord.y - 0.5);',
 			'  int it = 0;',
 			'  for(int i = 0; i < max_its; i++) {',
-			'    float x = (z.x * z.x - z.y * z.y) + uSeed.x;',
-			'    float y = (z.y * z.x + z.x * z.y) + uSeed.y;',
+			'    float x = (z.x * z.x - z.y * z.y) + c.x;',
+			'    float y = (z.y * z.x + z.x * z.y) + c.y;',
 			'    if((x * x + y * y) > 10.0) break;',
 			'    z.x = x;',
 			'    z.y = y;',
 			'    it = i;',
 			'  }',
 			'  gl_FragColor = texture2D(Texture0, vec2((it == max_its ? 0.0 : float(it)) / 100.0, 0));',
-//            '  float t = mod( uTime * 0.5, 1000.0 ) / 1000.0;', // time [0..1]
-//            '  t = t > 0.5 ? 1.0 - t : t;', // [0->0.5] , [0.5->0]
-//            '  gl_FragColor = vec4( vNormal * 0.5 + 0.5, 1.0 ) * (vec4(1.0, 1.0, 1.0, 1.0) - vec4( distortion * 0.5 + 0.5 , 1.0 ))',
-//            '		               + vec4(0.69, 0.09, 0.12, 1.0) * vec4( distortion * 0.5 + 0.5 , 1.0 );',
             '}'
         ].join('\n');
 
@@ -231,6 +234,7 @@
 		root.getOrCreateStateSet().addUniform(unifs.aabb2min);
 		root.getOrCreateStateSet().addUniform(unifs.aabb2max);
 		root.getOrCreateStateSet().addUniform(unifs.seed);
+		root.getOrCreateStateSet().addUniform(unifs.staticSeed);
 		
 		// puts 2 cubes in the scene
 		loadCube(viewer, root, unifs, (aabb1min[0] + aabb1max[0])/2.0, (aabb1min[1] + aabb1max[1])/2.0, (aabb1min[2] + aabb1max[2])/2.0,
@@ -353,7 +357,8 @@
 			aabb1max: osg.Uniform.createFloat3(aabb1max, 'uAABB1max'),
 			aabb2min: osg.Uniform.createFloat3(aabb2min, 'uAABB2min'),
 			aabb2max: osg.Uniform.createFloat3(aabb2max, 'uAABB2max'),
-			seed: osg.Uniform.createFloat2(seed, 'uSeed')
+			seed: osg.Uniform.createFloat2(seed, 'uSeed'),
+			staticSeed: osg.Uniform.createFloat2(staticSeed, 'uStaticSeed')
         };
 
         var viewer = new osgViewer.Viewer(canvas);
